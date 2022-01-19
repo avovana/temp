@@ -83,7 +83,7 @@ void filter_messages(promise<list<string>> && p, const string & file_content, si
         ss.str(time_value);
         ss >> get_time(&time_value_t, "%Y%m%d-%H:%M:%S");
         if (ss.fail()) {
-            p.set_exception(std::make_exception_ptr(std::runtime_error("Message invalid time format to parse: " + time_value)));
+            p.set_exception(make_exception_ptr(runtime_error("Message invalid time format to parse: " + time_value)));
             return;
         }
 
@@ -108,7 +108,7 @@ void filter_messages(promise<list<string>> && p, const string & file_content, si
     }
 
     // for (auto const &message : messages)
-    //    std::cout << message << "\n";
+    //    cout << message << "\n";
 
     p.set_value(move(messages));
 }
@@ -151,8 +151,8 @@ int main(int argc, char **argv) {
     cout << "Start time: " << put_time(&start_t, "%c") << endl;
     cout << "End time:   " << put_time(&end_t, "%c") << endl;
 
-    //int threads_count = thread::hardware_concurrency() ? thread::hardware_concurrency() : 8;
-    int threads_count = 2;
+    int threads_count = thread::hardware_concurrency() ? thread::hardware_concurrency() : 8;
+    //int threads_count = 2;
     cout << "threads_count: " << threads_count << endl;
 
     ifstream is(input_file, ifstream::binary);
@@ -170,12 +170,11 @@ int main(int argc, char **argv) {
     is.close();
 
     string file_content(bytes.data(), file_length);
-    // cout << "file size: " << file_content.size() << endl;
 
     int size_to_process = file_length / threads_count;
 
-    // cout << "length: " << file_length << endl;
-    // cout << "first_part: " << size_to_process << endl;
+    // cout << "length:          " << file_length << endl;
+    // cout << "size_to_process: " << size_to_process << endl;
 
     vector<thread> workers;
     vector<promise<list<string>>> promises(threads_count);
@@ -192,6 +191,9 @@ int main(int argc, char **argv) {
         if(new_msg_start_pos == string::npos)
             new_msg_start_pos = file_content.size() - 1;
 
+        // cout << "start_pos        : " << start_pos << endl;
+        // cout << "new_msg_start_pos: " << new_msg_start_pos << endl << endl;
+
         workers.push_back(thread(filter_messages, move(promises[i]), ref(file_content), start_pos, new_msg_start_pos, ref(start_t), ref(end_t)));
         start_pos = new_msg_start_pos;
     }
@@ -202,19 +204,20 @@ int main(int argc, char **argv) {
             if (worker.joinable())
                 worker.join();
 
+        int i = 0;
         for (auto &fut : futures) {
             auto messages = fut.get();
-            cout << "From future: " << endl;
+            // cout << "From future: " << i++ << endl;
             for (auto const &message : messages) {
                 cout << message << endl;;
             }
         }
-    } catch (std::future_error const & e) {
-        std::cout << "Future error: " << e.what() << " / " << e.code() << std::endl;
-    } catch (std::exception const & e) {
-        std::cout << "Standard exception: " << e.what() << std::endl;
+    } catch (future_error const & e) {
+        cout << "Future error: " << e.what() << " / " << e.code() << endl;
+    } catch (exception const & e) {
+        cout << "Standard exception: " << e.what() << endl;
     } catch (...) {
-        std::cout << "Unknown exception." << std::endl;
+        cout << "Unknown exception." << endl;
     }
 
 
@@ -232,11 +235,11 @@ void filter_messages2(promise<list<string>> && p, const string & file_content) {
 }
 int test()
 {
-    std::promise<int> pr;
+    promise<int> pr;
     auto fut = pr.get_future();
 
     {
-        std::promise<int> pr2(std::move(pr));
+        promise<int> pr2(move(pr));
         pr2.set_value(10);
     }
 
@@ -244,7 +247,7 @@ int test()
 }
 
 
-void func(std::promise<list<string>> && p) {
+void func(promise<list<string>> && p) {
     list<string> ll;
 
     ll.push_back("123");
@@ -253,3 +256,4 @@ void func(std::promise<list<string>> && p) {
     p.set_value(move(ll));
 }
 */
+
