@@ -53,8 +53,16 @@ tuple<int, string, tm, tm> get_start_end_times(const string & time_range) {
     return {error_code, {}, start_time_t, end_time_t};
 }
 
+tuple<int, string> get_tag_value(const string& tag_value) {
+    auto delimiter_pos = tag_value.find("=");
+    int tag = stoi(tag_value.substr(0, delimiter_pos));
+    string value = tag_value.substr(delimiter_pos + 1, tag_value.size() - 1);
+
+    return {tag, value};
+}
+
 //, unordered_map<int, string> tags_to_check = {}
-void filter_messages(promise<list<string>> && p, const string & file_content, size_t msg_start_pos, size_t end_pos, tm &start_t, tm &end_t) {
+void filter_messages(promise<list<string>> && p, const string & file_content, size_t msg_start_pos, size_t end_pos, tm start_t, tm end_t, const unordered_map<int, string>& tags_to_check) {
     // cout << __PRETTY_FUNCTION__ << endl;
     // cout << "start_msg_pos: " << msg_start_pos << endl;
     // cout << "end_pos:       " << end_pos << endl << endl;
@@ -93,13 +101,34 @@ void filter_messages(promise<list<string>> && p, const string & file_content, si
 
         auto new_msg_start_pos = file_content.find("8=FIX.4", time_end_pos);
         if(new_msg_start_pos == string::npos)
-            new_msg_start_pos = file_content.size();
+            new_msg_start_pos = file_content.size() - 1;
 
+        // cout << "New message -------------------------------------------------------" << endl;
         if(start_time <= msg_time && msg_time <= end_time) {
-            auto message = file_content.substr(msg_start_pos, new_msg_start_pos - msg_start_pos);
-            messages.push_back(message);
-            // cout << "msg added" << endl;
+            bool all_tags_equal = true;
+            if(not tags_to_check.empty())
+                for(size_t j = i; j < new_msg_start_pos;) {
+                    auto tag_end_pos = file_content.find(soh, j);
+                    string tag_value = file_content.substr(j, tag_end_pos - j);
+                    const auto& [tag, value] = get_tag_value(tag_value);
+
+                    if(tags_to_check.find(tag) != tags_to_check.end())
+                        if(tags_to_check.at(tag) != value) {
+                            all_tags_equal = false;
+                            break;
+                        }
+
+                    // cout << tag_value << " " << tag << " " << value << endl;
+                    j = tag_end_pos + 1;
+                }
+
+            if(all_tags_equal) {
+                auto message = file_content.substr(msg_start_pos, new_msg_start_pos - msg_start_pos);
+                messages.push_back(message);
+                // cout << "msg added" << endl;
+            }
         }
+        // cout << "End message -------------------------------------------------------" << endl;
 
         i = new_msg_start_pos;
         msg_start_pos = new_msg_start_pos;
@@ -119,6 +148,7 @@ int main(int argc, char **argv) {
     string input_file;
     tm start_t;
     tm end_t;
+    unordered_map<int, string> tags_to_check;
 
     if (argc < 5) {
         cout << "Invalid input. Should be more than 5 parameters. Use -h to check the correct format." << '\n';
@@ -127,7 +157,8 @@ int main(int argc, char **argv) {
 
     for (auto i = args.begin(); i != args.end(); ++i) {
         if (*i == "-h" || *i == "--help") {
-            cout << "Help: -fix_dump 9120_in.211215090640911359.fix_dump -time 20211215-20:10:16/20211215-20:10:51 [-tag 35=A -tag 9=28 ...]" << endl;
+            cout << "Help: -fix_dump 9120_in.211215090640911359.fix_dump -time 20211215-20:10:16/20211215-20:10:51 [-tag 35=0 -tag 9=72 ...]" << endl;
+            cout << "Program parses input fix_dump file filtering messages by time interval and tags. Output appropriate messages." << endl;
             return 0;
         } else if (*i == "-fix_dump") {
             input_file = *++i;
@@ -145,15 +176,18 @@ int main(int argc, char **argv) {
                 cout << error_msg << " Use -h to check the correct format." << endl;
                 return -1;
             }
+        } else if (*i == "-tag") {
+            string tag_value = *++i;
+            const auto& [tag, value] = get_tag_value(tag_value);
+            tags_to_check[tag] = value;
         }
     }
 
+    cout << "Conditions for filtering:" << endl;
     cout << "Start time: " << put_time(&start_t, "%c") << endl;
     cout << "End time:   " << put_time(&end_t, "%c") << endl;
-
-    int threads_count = thread::hardware_concurrency() ? thread::hardware_concurrency() : 8;
-    //int threads_count = 2;
-    cout << "threads_count: " << threads_count << endl;
+    for (auto const& [tag, value] : tags_to_check)
+        cout << tag << '=' << value << endl;
 
     ifstream is(input_file, ifstream::binary);
     if (not is) {
@@ -171,6 +205,9 @@ int main(int argc, char **argv) {
 
     string file_content(bytes.data(), file_length);
 
+    int threads_count = thread::hardware_concurrency() ? thread::hardware_concurrency() : 8;
+    // cout << "threads_count: " << threads_count << endl;
+
     int size_to_process = file_length / threads_count;
 
     // cout << "length:          " << file_length << endl;
@@ -185,7 +222,6 @@ int main(int argc, char **argv) {
 
     size_t start_pos = 0;
     for(int i = 0; i < threads_count; ++i) {
-        // cout << "make new thread" << endl;
         auto new_msg_start_pos = file_content.find("8=FIX.4", start_pos + size_to_process);
 
         if(new_msg_start_pos == string::npos)
@@ -193,8 +229,7 @@ int main(int argc, char **argv) {
 
         // cout << "start_pos        : " << start_pos << endl;
         // cout << "new_msg_start_pos: " << new_msg_start_pos << endl << endl;
-
-        workers.push_back(thread(filter_messages, move(promises[i]), ref(file_content), start_pos, new_msg_start_pos, ref(start_t), ref(end_t)));
+        workers.push_back(thread(filter_messages, move(promises[i]), ref(file_content), start_pos, new_msg_start_pos, start_t, end_t, cref(tags_to_check)));
         start_pos = new_msg_start_pos;
     }
 
@@ -204,7 +239,7 @@ int main(int argc, char **argv) {
             if (worker.joinable())
                 worker.join();
 
-        int i = 0;
+        // int i = 0;
         for (auto &fut : futures) {
             auto messages = fut.get();
             // cout << "From future: " << i++ << endl;
