@@ -61,7 +61,6 @@ tuple<int, string> get_tag_value(const string& tag_value) {
     return {tag, value};
 }
 
-//, unordered_map<int, string> tags_to_check = {}
 void filter_messages(promise<list<string>> && p, const string & file_content, size_t msg_start_pos, size_t end_pos, tm start_t, tm end_t, const unordered_map<int, string>& tags_to_check) {
     // cout << __PRETTY_FUNCTION__ << endl;
     // cout << "start_msg_pos: " << msg_start_pos << endl;
@@ -69,16 +68,10 @@ void filter_messages(promise<list<string>> && p, const string & file_content, si
     list<string> messages;
 
     char soh = 0x01;
-//    size_t soh_pos = file_content.find(soh, j);
-//    if (found != string::npos)
-//        cout << "second 'soh' found at: " << found << '\n';
-
-    //cout << "soh: " << found << '\n';
 
     istringstream ss;
     tm time_value_t = {};
     for(size_t i = msg_start_pos; i < end_pos;) {
-        //for(size_t j = start_pos; j < start_pos + shift; ++j) {
         auto time_start_pos = file_content.find("52=", i) + 3;
         auto time_end_pos = file_content.find(".", time_start_pos);
         string time_value = file_content.substr(time_start_pos, time_end_pos - time_start_pos);
@@ -291,4 +284,3 @@ void func(promise<list<string>> && p) {
     p.set_value(move(ll));
 }
 */
-
